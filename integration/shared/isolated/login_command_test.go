@@ -757,6 +757,17 @@ var _ = Describe("login command", func() {
 			Eventually(session).Should(Exit(0))
 		})
 
+		When("the -u flag is provided", func() {
+			It("prompts the user for their password", func() {
+				username, password := helpers.GetCredentials()
+				buffer := NewBuffer()
+				buffer.Write([]byte(fmt.Sprintf("%s\n", password)))
+				session := helpers.CFWithStdin(buffer, "login", "-u", username)
+				Eventually(session).Should(Say("Password: "))
+				Eventually(session).Should(Exit(0))
+			})
+		})
+
 		When("the user provides the -p flag", func() {
 			It("prompts the user for their email and logs in successfully", func() {
 				username, password := helpers.GetCredentials()
@@ -810,6 +821,44 @@ var _ = Describe("login command", func() {
 				input.Write([]byte(username + "\n" + password + "\n" + orgName + "\n"))
 				session := helpers.CFWithStdin(input, "login")
 				Eventually(session).Should(Exit(0))
+			})
+
+			FWhen("MFA is enabled", func() {
+				var (
+					password string
+					mfaCode  string
+					server   *ghttp.Server
+				)
+
+				BeforeEach(func() {
+					password = "some-password"
+					mfaCode = "123456"
+					server = helpers.StartAndTargetServerWithAPIVersions(helpers.DefaultV2Version, helpers.DefaultV3Version)
+					helpers.AddMfa(server, password, mfaCode)
+				})
+
+				AfterEach(func() {
+					server.Close()
+				})
+
+				When("correct MFA code and credentials are provided", func() {
+					It("Succeeds", func() {
+						input := NewBuffer()
+						input.Write([]byte(username + "\n" + password + "\n" + mfaCode + "\n"))
+						session := helpers.CFWithStdin(input, "login")
+						Eventually(session).Should(Exit(0))
+					})
+				})
+
+				When("incorrect MFA code and credentials are provided", func() {
+					It("fails", func() {
+						input := NewBuffer()
+						wrongMfaCode := mfaCode + "foo"
+						input.Write([]byte(username + "\n" + password + "\n" + wrongMfaCode + "\n"))
+						session := helpers.CFWithStdin(input, "login")
+						Eventually(session).Should(Exit(1))
+					})
+				})
 			})
 		})
 
